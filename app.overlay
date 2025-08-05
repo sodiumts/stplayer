@@ -1,0 +1,44 @@
+/ {
+	msc_disk0 {
+		compatible = "zephyr,flash-disk";
+		partition = <&storage_partition>;
+		disk-name = "NAND";
+		cache-size = <65536>;
+        status = "okay";
+	};
+};
+
+&spi1 {
+	pinctrl-0 = <&spi1_sck_pa5  &spi1_miso_pa6 &spi1_mosi_pa7>;
+	pinctrl-names = "default";
+	cs-gpios = <&gpioa 4 GPIO_ACTIVE_LOW>;
+
+	status = "okay";
+
+	w25q64_spi: spi-nor-flash@0 {
+		compatible = "jedec,spi-nor";
+		reg = <0>;
+		spi-max-frequency = <24000000>;
+		size = <DT_SIZE_M(64)>; /* 64 Mbits */
+		status = "okay";
+		jedec-id = [ef 40 17];
+
+        partitions {
+            compatible = "fixed-partitions";
+            #address-cells = <1>;
+            #size-cells = <1>;
+
+            storage_partition: partition@0 {
+                label = "storage";
+                reg = <0x00000000 0x00400000>;
+            };
+        };
+	};
+};
+
+&usbotg_fs {
+    status = "okay";
+    pinctrl-0 = <&usb_otg_fs_dm_pa11 &usb_otg_fs_dp_pa12>;
+    pinctrl-names = "default";
+};
+
