@@ -9,42 +9,52 @@
 #include <zephyr/drivers/i2s.h>
 #include <math.h>
 
-#define SAMPLE_RATE     48000U
-#define TONE_FREQ       440.0
-#define BUFFER_FRAMES   256
-#define CHANNELS        2
-#define BYTES_PER_SAMPLE (sizeof(int16_t))
-#define BUFFER_SIZE     (BUFFER_FRAMES * CHANNELS)
-
-#ifndef M_PI
-#define M_PI 3.1415926
-#endif
 
 
-#define I2S_DEV DT_NODELABEL(i2s2)
+
+#define I2S_DEV DT_NODELABEL(i2s3)
 static const struct device *i2s_dev = DEVICE_DT_GET(I2S_DEV);
 
-static int16_t audio_buf[BUFFER_SIZE];
-static double phase;
 
-static void fill_sine(void)
-{
-    const double phase_inc = 2.0 * M_PI * TONE_FREQ / (double)SAMPLE_RATE;
-
-    for (int i = 0; i < BUFFER_FRAMES; i++) {
-        int16_t sample = (int16_t)(sin(phase) * INT16_MAX);
-        /* left + right same sample */
-        audio_buf[2*i]   = sample;
-        audio_buf[2*i+1] = sample;
-
-        phase += phase_inc;
-        if (phase >= 2.0 * M_PI) {
-            phase -= 2.0 * M_PI;
-        }
-    }
-}
 
 LOG_MODULE_REGISTER(main);
+
+
+#define SAMPLE_NO 64
+
+/* The data represent a sine wave */
+static int16_t data[SAMPLE_NO] = {
+	  3211,   6392,   9511,  12539,  15446,  18204,  20787,  23169,
+	 25329,  27244,  28897,  30272,  31356,  32137,  32609,  32767,
+	 32609,  32137,  31356,  30272,  28897,  27244,  25329,  23169,
+	 20787,  18204,  15446,  12539,   9511,   6392,   3211,      0,
+	 -3212,  -6393,  -9512, -12540, -15447, -18205, -20788, -23170,
+	-25330, -27245, -28898, -30273, -31357, -32138, -32610, -32767,
+	-32610, -32138, -31357, -30273, -28898, -27245, -25330, -23170,
+	-20788, -18205, -15447, -12540,  -9512,  -6393,  -3212,     -1,
+};
+
+static void fill_buf(int16_t *tx_block, int att)
+{
+	int r_idx;
+
+	for (int i = 0; i < SAMPLE_NO; i++) {
+		/* Left channel is sine wave */
+		tx_block[2 * i] = data[i] / (1 << att);
+		/* Right channel is same sine wave, shifted by 90 degrees */
+		r_idx = (i + (ARRAY_SIZE(data) / 4)) % ARRAY_SIZE(data);
+		tx_block[2 * i + 1] = data[r_idx] / (1 << att);
+	}
+}
+
+
+#define NUM_BLOCKS 20
+#define BLOCK_SIZE (2 * sizeof(data))
+
+
+static char __aligned(WB_UP(32))
+                      _k_mem_slab_buf_tx_0_mem_slab[(NUM_BLOCKS) * WB_UP(BLOCK_SIZE)];
+static STRUCT_SECTION_ITERABLE(k_mem_slab, tx_0_mem_slab) = Z_MEM_SLAB_INITIALIZER(tx_0_mem_slab, _k_mem_slab_buf_tx_0_mem_slab, WB_UP(BLOCK_SIZE), NUM_BLOCKS);
 
 #include <zephyr/storage/flash_map.h>
 #include <ff.h>
@@ -176,44 +186,72 @@ static void setup_disk(void)
 	return;
 }
 
+static uint32_t phase = 0;  // Phase accumulator for continuous wave
+
+static void fill_buf_continuous(int16_t *tx_block)
+{
+    for (int i = 0; i < SAMPLE_NO; i++) {
+        // Generate 1kHz square wave
+        int16_t value = (i < SAMPLE_NO/2) ? 32767 : -32768;
+        tx_block[2 * i] = value;     // Left channel
+        tx_block[2 * i + 1] = value;  // Right channel
+    }
+}
 
 int main(void)
 {
 	int ret;
 
-	setup_disk();
+	//setup_disk();
 
-	ret = usb_enable(NULL);
-	if (ret != 0) {
-		LOG_ERR("Failed to enable USB");
-		return 0;
-	}
+	//ret = usb_enable(NULL);
+	//if (ret != 0) {
+	//	LOG_ERR("Failed to enable USB\n");
+	//	return 0;
+	//}
 
 	LOG_INF("The device is put in USB mass storage mode.\n");
 
     if (!device_is_ready(i2s_dev)) {
-        LOG_ERR("I2S device not ready");
+        LOG_ERR("I2S device not ready\n");
         return 1;
     }
     
-
     struct i2s_config cfg = {
         .word_size       = 16,
-        .channels        = CHANNELS,
+        .channels        = 2,
         .format          = I2S_FMT_DATA_FORMAT_I2S | I2S_FMT_DATA_ORDER_MSB,
         .options         = I2S_OPT_BIT_CLK_MASTER | I2S_OPT_FRAME_CLK_MASTER,
-        .frame_clk_freq  = SAMPLE_RATE,
-        .block_size      = BUFFER_SIZE * BYTES_PER_SAMPLE,
-        .timeout         = 100
+        .frame_clk_freq  = 44100,
+        .block_size      = BLOCK_SIZE,
+        .timeout         = 2000,
+        .mem_slab = &tx_0_mem_slab,
     };
-
+    printk("Before config\n");
     ret = i2s_configure(i2s_dev, I2S_DIR_TX, &cfg);
     if (ret) {
         printk("I2S config failed: %d\n", ret);
         return 1;
     }
 
-    k_sleep(K_MSEC(100)); 
+    printk("HEREEEEEEEEE\n");
+
+    void *tx_blocks[NUM_BLOCKS];
+    for (int i = 0; i < NUM_BLOCKS; i++) {
+        ret = k_mem_slab_alloc(&tx_0_mem_slab, &tx_blocks[i], K_FOREVER);
+        if (ret < 0) {
+            LOG_ERR("TX block alloc failed: %d\n", ret);
+            return ret;
+        }
+        fill_buf_continuous(tx_blocks[i]);
+    }
+
+
+    ret = i2s_write(i2s_dev, tx_blocks[0], BLOCK_SIZE);
+    if (ret) {
+        printk("Could not do initial write: %d\n", ret);
+        return 1;
+    }
 
     ret = i2s_trigger(i2s_dev, I2S_DIR_TX, I2S_TRIGGER_START);
     if (ret) {
@@ -221,17 +259,34 @@ int main(void)
         return 1;
     }
 
-    while (1) {
-        fill_sine();
-
-        ret = i2s_write(i2s_dev, audio_buf, sizeof(audio_buf));
-        if (ret) {
-            printk("I2S write error: %d\n", ret);
-            break;
+    for (int i = 1; i < NUM_BLOCKS; i++) {
+        ret = i2s_write(i2s_dev, tx_blocks[i], BLOCK_SIZE);
+        if (ret < 0) {
+            LOG_ERR("Initial write failed: %d", ret);
         }
     }
 
-    i2s_trigger(i2s_dev, I2S_DIR_TX, I2S_TRIGGER_STOP);
+    while (1) {
+        void *block;
+        ret = k_mem_slab_alloc(&tx_0_mem_slab, &block, K_FOREVER);
+        if (ret < 0) {
+            LOG_ERR("Buffer alloc failed: %d", ret);
+            continue;
+        }
 
+        fill_buf_continuous(block);
+
+        ret = i2s_write(i2s_dev, block, BLOCK_SIZE);
+        if (ret < 0) {
+            LOG_ERR("I2S write failed: %d", ret);
+            k_mem_slab_free(&tx_0_mem_slab, &block);
+        }
+    }
+    ret = i2s_trigger(i2s_dev, I2S_DIR_TX, I2S_TRIGGER_DRAIN);
+    
+    if (ret < 0) {
+        printf("Could not trigger I2S tx\n");
+        return ret;
+    }
 	return 0;
 }

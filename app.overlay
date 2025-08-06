@@ -12,6 +12,20 @@
 	};
 };
 
+&plli2s {
+	/* Minimize audio clock error (with i2s mck-enabled) for all of:
+	 * - 22.05kHz / 16b, 24b or 32b
+	 * - 44.1kHz  / 16b, 24b or 32b
+	 * - 88.2kHz  / 16b or 24b
+	 * Note: because the PLLI2S is dependent on the main PLL, the latter
+	 *       should not be changed without checking impact on PLLI2S
+	 */
+    div-m = <8>;
+	mul-n = <271>;
+	div-r = <2>;
+	status = "okay";
+};
+
 &pinctrl {
     i2s2_din: i2s2-din {
         pinmux = <STM32_PINMUX('B', 15, AF5)>;            /* your DIN pinmux cell */
@@ -37,10 +51,15 @@
     status = "okay";
 };
 
-&i2s2 {
+
+
+&i2s3 {
     status = "okay";
     pinctrl-0 = <&i2s2_din &i2s2_bclk &i2s2_lrc>;
     pinctrl-names = "default";
+    clocks = <&rcc STM32_CLOCK(APB1, 15U)>,
+		 <&rcc STM32_SRC_PLLI2S_R I2S_SEL(0)>;
+    mck-enabled;
 };
 
 
