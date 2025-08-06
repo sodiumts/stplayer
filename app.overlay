@@ -1,3 +1,7 @@
+&flash0 {
+    status = "disabled";
+};
+
 / {
 	msc_disk0 {
 		compatible = "zephyr,flash-disk";
@@ -7,6 +11,38 @@
         status = "okay";
 	};
 };
+
+&pinctrl {
+    i2s2_din: i2s2-din {
+        pinmux = <STM32_PINMUX('B', 15, AF5)>;            /* your DIN pinmux cell */
+        bias-disable;
+        drive-push-pull;
+        slew-rate = "high-speed";
+    };
+    i2s2_bclk: i2s2-bclk {
+        pinmux = <STM32_PINMUX('B', 13, AF5)>;            /* your BCLK pinmux cell */
+        bias-disable;
+        drive-push-pull;
+        slew-rate = "high-speed";
+    };
+    i2s2_lrc: i2s2-lrc {
+        pinmux = <STM32_PINMUX('B', 12, AF5)>;            /* your LRC pinmux cell */
+        bias-disable;
+        drive-push-pull;
+        slew-rate = "high-speed";
+    };
+};
+
+&dma1 {
+    status = "okay";
+};
+
+&i2s2 {
+    status = "okay";
+    pinctrl-0 = <&i2s2_din &i2s2_bclk &i2s2_lrc>;
+    pinctrl-names = "default";
+};
+
 
 &spi1 {
 	pinctrl-0 = <&spi1_sck_pa5  &spi1_miso_pa6 &spi1_mosi_pa7>;
@@ -35,6 +71,8 @@
         };
 	};
 };
+
+
 
 &usbotg_fs {
     status = "okay";

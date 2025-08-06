@@ -4,7 +4,45 @@
 #include <zephyr/storage/disk_access.h>
 #include <zephyr/fs/fs.h>
 #include <zephyr/fs/fs_sys.h>
+#include <zephyr/devicetree.h>
 #include <zephyr/logging/log.h>
+#include <zephyr/drivers/i2s.h>
+#include <math.h>
+
+#define SAMPLE_RATE     48000U
+#define TONE_FREQ       440.0
+#define BUFFER_FRAMES   256
+#define CHANNELS        2
+#define BYTES_PER_SAMPLE (sizeof(int16_t))
+#define BUFFER_SIZE     (BUFFER_FRAMES * CHANNELS)
+
+#ifndef M_PI
+#define M_PI 3.1415926
+#endif
+
+
+#define I2S_DEV DT_NODELABEL(i2s2)
+static const struct device *i2s_dev = DEVICE_DT_GET(I2S_DEV);
+
+static int16_t audio_buf[BUFFER_SIZE];
+static double phase;
+
+static void fill_sine(void)
+{
+    const double phase_inc = 2.0 * M_PI * TONE_FREQ / (double)SAMPLE_RATE;
+
+    for (int i = 0; i < BUFFER_FRAMES; i++) {
+        int16_t sample = (int16_t)(sin(phase) * INT16_MAX);
+        /* left + right same sample */
+        audio_buf[2*i]   = sample;
+        audio_buf[2*i+1] = sample;
+
+        phase += phase_inc;
+        if (phase >= 2.0 * M_PI) {
+            phase -= 2.0 * M_PI;
+        }
+    }
+}
 
 LOG_MODULE_REGISTER(main);
 
@@ -152,5 +190,48 @@ int main(void)
 	}
 
 	LOG_INF("The device is put in USB mass storage mode.\n");
+
+    if (!device_is_ready(i2s_dev)) {
+        LOG_ERR("I2S device not ready");
+        return 1;
+    }
+    
+
+    struct i2s_config cfg = {
+        .word_size       = 16,
+        .channels        = CHANNELS,
+        .format          = I2S_FMT_DATA_FORMAT_I2S | I2S_FMT_DATA_ORDER_MSB,
+        .options         = I2S_OPT_BIT_CLK_MASTER | I2S_OPT_FRAME_CLK_MASTER,
+        .frame_clk_freq  = SAMPLE_RATE,
+        .block_size      = BUFFER_SIZE * BYTES_PER_SAMPLE,
+        .timeout         = 100
+    };
+
+    ret = i2s_configure(i2s_dev, I2S_DIR_TX, &cfg);
+    if (ret) {
+        printk("I2S config failed: %d\n", ret);
+        return 1;
+    }
+
+    k_sleep(K_MSEC(100)); 
+
+    ret = i2s_trigger(i2s_dev, I2S_DIR_TX, I2S_TRIGGER_START);
+    if (ret) {
+        printk("I2S trigger start failed: %d\n", ret);
+        return 1;
+    }
+
+    while (1) {
+        fill_sine();
+
+        ret = i2s_write(i2s_dev, audio_buf, sizeof(audio_buf));
+        if (ret) {
+            printk("I2S write error: %d\n", ret);
+            break;
+        }
+    }
+
+    i2s_trigger(i2s_dev, I2S_DIR_TX, I2S_TRIGGER_STOP);
+
 	return 0;
 }
