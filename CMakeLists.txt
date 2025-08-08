@@ -8,3 +8,5 @@ project(stplayer)
 
 target_sources(app PRIVATE src/main.c src/usb_mass.c)
 target_include_directories(app PRIVATE include)
+
+

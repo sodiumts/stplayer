@@ -1,6 +1,7 @@
 #include "usb_mass.h"
 
 #include "zephyr/logging/log.h"
+#include <stdint.h>
 #include <zephyr/usb/usb_device.h>
 #include <zephyr/storage/disk_access.h>
 #include <zephyr/fs/fs.h>
@@ -8,36 +9,36 @@
 #include <zephyr/storage/flash_map.h>
 #include <ff.h>
 
+
 LOG_MODULE_REGISTER(usb_mass);
 
 static struct fs_mount_t fs_mnt;
 
 static int setup_flash(struct fs_mount_t *mnt)
 {
-	int rc = 0;
-	unsigned int id;
-	const struct flash_area *pfa;
+    int rc;
+    unsigned int id = STORAGE_PARTITION_ID;
+    const struct flash_area *pfa = NULL;
 
-	mnt->storage_dev = (void *)STORAGE_PARTITION_ID;
-	id = STORAGE_PARTITION_ID;
+    mnt->storage_dev = (void *)STORAGE_PARTITION_ID;
 
-	rc = flash_area_open(id, &pfa);
-	printk("Area %u at 0x%x on %s for %u bytes\n",
-	       id, (unsigned int)pfa->fa_off, pfa->fa_dev->name,
-	       (unsigned int)pfa->fa_size);
+    rc = flash_area_open(id, &pfa);
+    printk("flash_area_open returned %d\n", rc);
+    if (rc < 0) {
+        LOG_ERR("flash_area_open failed: %d", rc);
+        return rc;
+    }
 
-	if (rc < 0 && IS_ENABLED(CONFIG_APP_WIPE_STORAGE)) {
-		printk("Erasing flash area ... ");
-		rc = flash_area_flatten(pfa, 0, pfa->fa_size);
-		printk("%d\n", rc);
-	}
+    printk("Area %u at 0x%08x on %s for %u bytes\n",
+           id, (unsigned int)pfa->fa_off,
+           pfa->fa_dev ? pfa->fa_dev->name : "unknown",
+           (unsigned int)pfa->fa_size);
 
-	if (rc < 0) {
-		flash_area_close(pfa);
-	}
-	return rc;
+    /* Close or keep open depending on needs. */
+    /* flash_area_close(pfa); */
+
+    return 0;
 }
-
 static int mount_app_fs(struct fs_mount_t *mnt)
 {
 	int rc;
@@ -46,15 +47,10 @@ static int mount_app_fs(struct fs_mount_t *mnt)
 
 	mnt->type = FS_FATFS;
 	mnt->fs_data = &fat_fs;
-	if (IS_ENABLED(CONFIG_DISK_DRIVER_RAM)) {
-		mnt->mnt_point = "/RAM:";
-	} else if (IS_ENABLED(CONFIG_DISK_DRIVER_SDMMC)) {
-		mnt->mnt_point = "/SD:";
-	} else {
-		mnt->mnt_point = "/NAND:";
-	}
+	mnt->mnt_point = "/NAND:";
 
 	rc = fs_mount(mnt);
+    printk("fs_mount returned %d for mount point %s\n", rc, mnt->mnt_point);
 
 	return rc;
 }
@@ -69,21 +65,14 @@ void setup_disk(void)
     
 	fs_dir_t_init(&dir);
 
-	if (IS_ENABLED(CONFIG_DISK_DRIVER_FLASH)) {
-		rc = setup_flash(mp);
-		if (rc < 0) {
-			LOG_ERR("Failed to setup flash area");
-			return;
-		}
-	}
-
-	if (!IS_ENABLED(CONFIG_FILE_SYSTEM_LITTLEFS) &&
-	    !IS_ENABLED(CONFIG_FAT_FILESYSTEM_ELM)) {
-		LOG_INF("No file system selected");
-		return;
-	}
+	rc = setup_flash(mp);
+    if (rc < 0) {
+        LOG_ERR("Failed to setup flash area");
+        return;
+    }
 
 	rc = mount_app_fs(mp);
+    printk("mount_app_fs rc = %d\n", rc);
 	if (rc < 0) {
 		LOG_ERR("Failed to mount filesystem");
 		return;
@@ -94,7 +83,10 @@ void setup_disk(void)
 
 	printk("Mount %s: %d\n", fs_mnt.mnt_point, rc);
 
-	rc = fs_statvfs(mp->mnt_point, &sbuf);
+	k_sleep(K_MSEC(50));
+	
+    rc = fs_statvfs(mp->mnt_point, &sbuf);
+    printk("fs_statvfs rc = %d\n", rc);
 	if (rc < 0) {
 		printk("FAIL: statvfs: %d\n", rc);
 		return;
@@ -133,5 +125,7 @@ void setup_disk(void)
 
 	(void)fs_closedir(&dir);
 
-	return;
+    return;
 }
+
+

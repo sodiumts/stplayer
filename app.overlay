@@ -27,20 +27,20 @@
 };
 
 &pinctrl {
-    i2s2_din: i2s2-din {
-        pinmux = <STM32_PINMUX('B', 15, AF5)>;            /* your DIN pinmux cell */
+    i2s3_din: i2s3-din {
+        pinmux = <STM32_PINMUX('B', 5, AF6)>;            /* your DIN pinmux cell */
         bias-disable;
         drive-push-pull;
         slew-rate = "high-speed";
     };
-    i2s2_bclk: i2s2-bclk {
-        pinmux = <STM32_PINMUX('B', 13, AF5)>;            /* your BCLK pinmux cell */
+    i2s3_bclk: i2s3-bclk {
+        pinmux = <STM32_PINMUX('B', 12, AF7)>;            /* your BCLK pinmux cell */
         bias-disable;
         drive-push-pull;
         slew-rate = "high-speed";
     };
-    i2s2_lrc: i2s2-lrc {
-        pinmux = <STM32_PINMUX('B', 12, AF5)>;            /* your LRC pinmux cell */
+    i2s3_lrc: i2s3-lrc {
+        pinmux = <STM32_PINMUX('A', 15, AF6)>;            /* your LRC pinmux cell */
         bias-disable;
         drive-push-pull;
         slew-rate = "high-speed";
@@ -55,7 +55,7 @@
 
 &i2s3 {
     status = "okay";
-    pinctrl-0 = <&i2s2_din &i2s2_bclk &i2s2_lrc>;
+    pinctrl-0 = <&i2s3_lrc &i2s3_bclk &i2s3_din>;
     pinctrl-names = "default";
     clocks = <&rcc STM32_CLOCK(APB1, 15U)>,
 		 <&rcc STM32_SRC_PLLI2S_R I2S_SEL(0)>;

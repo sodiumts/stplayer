@@ -1,49 +1,232 @@
+#include <stddef.h>
+#include <stdint.h>
 #include <zephyr/kernel.h>
 #include <zephyr/device.h>
 #include <zephyr/devicetree.h>
 #include <zephyr/logging/log.h>
 #include <zephyr/drivers/i2s.h>
 #include <zephyr/usb/usb_device.h>
+#include <ff.h>
+#include <opus.h>
 
 #include "usb_mass.h"
+
+
+
+static void apply_volume_int16(int16_t *samples, size_t nsamples, uint8_t vol_percent)
+{
+    if (vol_percent == 100) {
+        return;
+    }
+    if (vol_percent == 0) {
+        memset(samples, 0, nsamples * sizeof(int16_t));
+        return;
+    }
+
+    uint32_t scale = (vol_percent * 256U + 50U) / 100U;
+
+    for (size_t i = 0; i < nsamples; i++) {
+        int32_t s = samples[i];
+        int32_t tmp = s * (int32_t)scale;
+
+        tmp += (tmp >= 0) ? 128 : -128;
+        tmp >>= 8;
+
+        if (tmp > INT16_MAX) {
+            tmp = INT16_MAX;
+        } else if (tmp < INT16_MIN) {
+            tmp = INT16_MIN;
+        }
+
+        samples[i] = (int16_t)tmp;
+    }
+}
 
 #define I2S_DEV DT_NODELABEL(i2s3)
 static const struct device *i2s_dev = DEVICE_DT_GET(I2S_DEV);
 
 LOG_MODULE_REGISTER(main);
 
+OpusDecoder *decoder;
+
 #define SAMPLE_NO 64
 #define NUM_BLOCKS 20
 #define CHANNELS 2
 #define BLOCK_SIZE (SAMPLE_NO * CHANNELS * sizeof(int16_t))
 
-//static char __aligned(WB_UP(32)) _k_mem_slab_buf_tx_0_mem_slab[(NUM_BLOCKS) * WB_UP(BLOCK_SIZE)];
-//static STRUCT_SECTION_ITERABLE(k_mem_slab, tx_0_mem_slab) = Z_MEM_SLAB_INITIALIZER(tx_0_mem_slab, _k_mem_slab_buf_tx_0_mem_slab, WB_UP(BLOCK_SIZE), NUM_BLOCKS);
-
 K_MEM_SLAB_DEFINE_STATIC(tx_0_mem_slab, WB_UP(BLOCK_SIZE), NUM_BLOCKS, 32);
 
-static void fill_buf_continuous(int16_t *tx_block)
-{
-    for (int i = 0; i < SAMPLE_NO; i++) {
-        // Generate 1kHz square wave
-        int16_t value = (i < SAMPLE_NO/2) ? 32767 : -32768;
-        tx_block[2 * i] = value;     // Left channel
-        tx_block[2 * i + 1] = value;  // Right channel
+#define READ_BUF_SIZE 2048
+#define MAX_DECODED_SAMPLES 1152 
+#define PCM_BUFFER_SAMPLES 1152
+
+int stream_wav(const char *path) {
+    int rc;
+    struct fs_file_t filep;
+    fs_file_t_init(&filep);
+
+    if ((rc = fs_open(&filep, path, FS_O_READ)) < 0) {
+        LOG_ERR("fs_open failed: %d", rc);
+        return rc;
     }
+
+    uint8_t riff_header[12];
+    uint32_t data_size = 0;
+    uint32_t sample_rate = 0;
+    uint16_t bits_per_sample = 0;
+    uint16_t num_channels = 0;
+
+    if (fs_read(&filep, riff_header, sizeof(riff_header)) != sizeof(riff_header)) {
+        LOG_ERR("Failed to read RIFF header");
+        rc = -EIO;
+        goto cleanup;
+    }
+
+    if (memcmp(riff_header, "RIFF", 4) != 0 || memcmp(riff_header + 8, "WAVE", 4) != 0) {
+        LOG_ERR("Not a valid WAV file");
+        rc = -EINVAL;
+        goto cleanup;
+    }
+
+    while (1) {
+        char chunk_id[4];
+        uint32_t chunk_size;
+        
+        if (fs_read(&filep, chunk_id, 4) != 4) {
+            LOG_ERR("Failed to read chunk ID");
+            rc = -EIO;
+            goto cleanup;
+        }
+
+        if (fs_read(&filep, &chunk_size, 4) != 4) {
+            LOG_ERR("Failed to read chunk size");
+            rc = -EIO;
+            goto cleanup;
+        }
+
+        if (memcmp(chunk_id, "fmt ", 4) == 0) {
+            struct __attribute__((packed)) {
+                uint16_t audio_format;
+                uint16_t num_channels;
+                uint32_t sample_rate;
+                uint32_t byte_rate;
+                uint16_t block_align;
+                uint16_t bits_per_sample;
+            } fmt_chunk;
+
+            if (fs_read(&filep, &fmt_chunk, sizeof(fmt_chunk)) != sizeof(fmt_chunk)) {
+                LOG_ERR("Failed to read fmt chunk");
+                rc = -EIO;
+                goto cleanup;
+            }
+
+            if (chunk_size > sizeof(fmt_chunk)) {
+                fs_seek(&filep, chunk_size - sizeof(fmt_chunk), FS_SEEK_CUR);
+            }
+
+            if (fmt_chunk.audio_format != 1) {  // 1 = PCM
+                LOG_ERR("Only PCM format supported");
+                rc = -ENOTSUP;
+                goto cleanup;
+            }
+            
+            num_channels = fmt_chunk.num_channels;
+            sample_rate = fmt_chunk.sample_rate;
+            bits_per_sample = fmt_chunk.bits_per_sample;
+        }
+        else if (memcmp(chunk_id, "data", 4) == 0) {
+            data_size = chunk_size;
+            break;
+        }
+        else {
+            fs_seek(&filep, chunk_size, FS_SEEK_CUR);
+        }
+    }
+
+    if (num_channels != CHANNELS) {
+        LOG_ERR("Unsupported number of channels: %d (expected %d)", 
+                num_channels, CHANNELS);
+        rc = -ENOTSUP;
+        goto cleanup;
+    }
+
+    if (bits_per_sample != 16) {
+        LOG_ERR("Only 16-bit samples supported");
+        rc = -ENOTSUP;
+        goto cleanup;
+    }
+
+    if (sample_rate != 48000) {
+        LOG_WRN("Sample rate mismatch: file=%dHz, configured=48000Hz", sample_rate);
+    }
+
+    LOG_INF("Channels: %d bits per sample: %d sample rate %d", num_channels, bits_per_sample, sample_rate);
+
+    size_t bytes_remaining = data_size;
+    while (bytes_remaining > 0) {
+        void *block = NULL;
+        ssize_t read_n = 0;
+
+        rc = k_mem_slab_alloc(&tx_0_mem_slab, &block, K_FOREVER);
+        if (rc < 0) {
+            LOG_ERR("Block allocation failed: %d", rc);
+            break;
+        }
+
+        size_t to_read = MIN(BLOCK_SIZE, bytes_remaining);
+        read_n = fs_read(&filep, block, to_read);
+        if (read_n < 0) {
+            LOG_ERR("Read failed: %d", (int)read_n);
+            k_mem_slab_free(&tx_0_mem_slab, &block);
+            rc = (int)read_n;
+            break;
+        }
+
+        if ((size_t)read_n < BLOCK_SIZE) {
+            memset((uint8_t *)block + read_n, 0, BLOCK_SIZE - (size_t)read_n);
+        }
+
+        size_t nsamples = BLOCK_SIZE / sizeof(int16_t);
+        apply_volume_int16((int16_t *) block, nsamples, 20);
+
+        rc = i2s_write(i2s_dev, block, BLOCK_SIZE);
+        if (rc < 0) {
+            LOG_ERR("i2s_write failed: %d", rc);
+            k_mem_slab_free(&tx_0_mem_slab, &block);
+            break;
+        }
+
+        /* success: subtract bytes read */
+        bytes_remaining -= read_n;
+    }
+
+    LOG_INF("Streamed %u bytes of PCM data", data_size - bytes_remaining);
+cleanup:
+    fs_close(&filep);
+    return rc;
 }
 
 int main(void)
 {
 	int ret;
 
-	ret = usb_enable(NULL);
-	if (ret < 0) {
-		LOG_ERR("Failed to enable USB\n");
-        return 1;
-	}
+	
+//    ret = usb_enable(NULL);
+//	if (ret < 0) {
+//		LOG_ERR("Failed to enable USB\n");
+//        return 1;
+//	}
 	setup_disk();
 
-	LOG_INF("The device is put in USB mass storage mode.\n");
+	LOG_INF("Creating opus decoder.\n");
+
+
+    
+    decoder = opus_decoder_create(48000, CHANNELS, &ret);
+    if (ret != OPUS_OK) {
+        LOG_ERR("Failed to create decoder: %d", ret);
+        return ret;
+    }
 
     if (!device_is_ready(i2s_dev)) {
         LOG_ERR("I2S device not ready\n");
@@ -55,7 +238,7 @@ int main(void)
         .channels        = CHANNELS,
         .format          = I2S_FMT_DATA_FORMAT_I2S | I2S_FMT_DATA_ORDER_MSB,
         .options         = I2S_OPT_BIT_CLK_MASTER | I2S_OPT_FRAME_CLK_MASTER,
-        .frame_clk_freq  = 44100,
+        .frame_clk_freq  = 48000,
         .block_size      = BLOCK_SIZE,
         .timeout         = 2000,
         .mem_slab = &tx_0_mem_slab,
@@ -66,60 +249,43 @@ int main(void)
         printk("I2S config failed: %d\n", ret);
         return 1;
     }
-
-    printk("HEREEEEEEEEE\n");
-
-    void *tx_blocks[NUM_BLOCKS];
-    for (int i = 0; i < NUM_BLOCKS; i++) {
-    ret = k_mem_slab_alloc(&tx_0_mem_slab, &tx_blocks[i], K_FOREVER);
+    
+    for (int i = 0; i < 2; i++){
+        void *init_block;
+        ret = k_mem_slab_alloc(&tx_0_mem_slab, &init_block, K_FOREVER);
         if (ret < 0) {
             LOG_ERR("TX block alloc failed: %d\n", ret);
             return ret;
         }
-        fill_buf_continuous(tx_blocks[i]);
+        /* Zero-fill initial buffers (silence) to avoid pops.
+           Alternatively fill with silence/fade-in or an initial decoded chunk. */
+        memset(init_block, 0, BLOCK_SIZE);
+
+        ret = i2s_write(i2s_dev, init_block, BLOCK_SIZE);
+        if (ret < 0) {
+            LOG_ERR("i2s_write initial block failed: %d\n", ret);
+            /* If driver doesn't accept block, free it */
+            k_mem_slab_free(&tx_0_mem_slab, &init_block);
+        }
     }
 
-
-    ret = i2s_write(i2s_dev, tx_blocks[0], BLOCK_SIZE);
-    if (ret) {
-        printk("Could not do initial write: %d\n", ret);
-        return 1;
-    }
-
+    /* Start I2S DMA consuming queued blocks */
     ret = i2s_trigger(i2s_dev, I2S_DIR_TX, I2S_TRIGGER_START);
     if (ret) {
-        printk("I2S trigger start failed: %d\n", ret);
+        LOG_ERR("I2S trigger start failed: %d\n", ret);
         return 1;
     }
 
-    for (int i = 1; i < NUM_BLOCKS; i++) {
-        ret = i2s_write(i2s_dev, tx_blocks[i], BLOCK_SIZE);
-        if (ret < 0) {
-            LOG_ERR("Initial write failed: %d", ret);
-        }
-    }
+    LOG_INF("After trigger");
+    const char *song_path = "/NAND:/bruto.wav"; /* update filename to your file */
 
-    while (1) {
-        void *block;
-        ret = k_mem_slab_alloc(&tx_0_mem_slab, &block, K_FOREVER);
-        if (ret < 0) {
-            LOG_ERR("Buffer alloc failed: %d", ret);
-            continue;
-        }
-
-        fill_buf_continuous(block);
-
-        ret = i2s_write(i2s_dev, block, BLOCK_SIZE);
-        if (ret < 0) {
-            LOG_ERR("I2S write failed: %d", ret);
-            k_mem_slab_free(&tx_0_mem_slab, &block);
-        }
+    int rc = stream_wav(song_path);
+    printk("STREAM: stream_wav returned %d\n", rc);
+    if (rc != 0) {
+        LOG_ERR("stream_wav returned %d", rc);
     }
-    ret = i2s_trigger(i2s_dev, I2S_DIR_TX, I2S_TRIGGER_DRAIN);
-    
-    if (ret < 0) {
-        printf("Could not trigger I2S tx\n");
-        return ret;
-    }
-	return 0;
+    /* optionally trigger drain/stop here */
+    //i2s_trigger(i2s_dev, I2S_DIR_TX, I2S_TRIGGER_DRAIN);
+
+    return 0;
 }
