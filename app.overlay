@@ -7,7 +7,7 @@
 		compatible = "zephyr,flash-disk";
 		partition = <&storage_partition>;
 		disk-name = "NAND";
-		cache-size = <65536>;
+		cache-size = <4096>;
         status = "okay";
 	};
 };
