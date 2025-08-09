@@ -5,7 +5,7 @@
 #include <zephyr/kernel.h>
 #include <opus.h>
 
-#define SAMPLE_NO 5760
+#define SAMPLE_NO 2880
 #define NUM_BLOCKS 2
 #define CHANNELS 2
 #define BLOCK_SIZE (SAMPLE_NO * CHANNELS * sizeof(int16_t))
