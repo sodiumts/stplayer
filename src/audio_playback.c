@@ -8,7 +8,7 @@ LOG_MODULE_REGISTER(audio_playback, LOG_LEVEL_DBG);
 
 static const struct device *i2s_dev = DEVICE_DT_GET(I2S_DEV);
 
-static uint8_t opus_packet[500];
+static uint8_t opus_packet[1275];
 static opus_state_t op_state;
 static struct fs_file_t filep;
 OpusDecoder *decoder;
@@ -64,7 +64,7 @@ static int start_i2s_dma() {
         }
     }
 
-    LOG_INF("Starting DMAs");
+    LOG_INF("Starting i2s DMAs");
     ret = i2s_trigger(i2s_dev, I2S_DIR_TX, I2S_TRIGGER_START);
     if (ret) {
         LOG_ERR("I2S trigger start failed: %d", ret);
@@ -74,6 +74,7 @@ static int start_i2s_dma() {
 }
 
 static int stop_i2s_dma() {
+    LOG_INF("Stopping i2s DMAs");
     int ret = i2s_trigger(i2s_dev, I2S_DIR_TX, I2S_TRIGGER_DRAIN);
     if (ret < 0) {
         LOG_ERR("Failed to stop i2s with drain: %d", ret);
