@@ -5,6 +5,7 @@
 #include <zephyr/kernel.h>
 #include <opus.h>
 
+#define SAMPLE_RATE 48000
 #define SAMPLE_NO 2880
 #define NUM_BLOCKS 2
 #define CHANNELS 2

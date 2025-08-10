@@ -1,4 +1,5 @@
 #include "audio_playback.h"
+#include "opus_defines.h"
 
 #include <zephyr/logging/log.h>
 #include <opus.h>
@@ -85,12 +86,16 @@ static int stop_i2s_dma() {
 
 int stream_opus(const char *path) {
     int rc;
-    rc = start_i2s_dma();
     fs_file_t_init(&filep);
 
     if ((rc = fs_open(&filep, path, FS_O_READ)) < 0) {
-        LOG_ERR("fs_open failed: %d", rc);
+        LOG_ERR("fs_open failed: %d", rc); 
         return rc;
+    }
+
+    rc = start_i2s_dma();
+    if (rc < 0) {
+        goto cleanup;
     }
 
     opus_state_init(&op_state);
@@ -150,6 +155,7 @@ int stream_opus(const char *path) {
     }
   cleanup:
     fs_close(&filep);
+    opus_decoder_ctl(decoder, OPUS_RESET_STATE);
     stop_i2s_dma();
     return rc;
 }
@@ -166,7 +172,7 @@ static int configure_i2s() {
         .channels        = CHANNELS,
         .format          = I2S_FMT_DATA_FORMAT_I2S | I2S_FMT_DATA_ORDER_MSB,
         .options         = I2S_OPT_BIT_CLK_MASTER | I2S_OPT_FRAME_CLK_MASTER,
-        .frame_clk_freq  = 48000,
+        .frame_clk_freq  = SAMPLE_RATE,
         .block_size      = BLOCK_SIZE,
         .timeout         = 2000,
         .mem_slab = &tx_0_mem_slab,
@@ -185,7 +191,7 @@ static int configure_i2s() {
 
 int init_audio_playback() { 
     int ret;
-    decoder = opus_decoder_create(48000, CHANNELS, &ret);
+    decoder = opus_decoder_create(SAMPLE_RATE, CHANNELS, &ret);
     if (ret != OPUS_OK) {
         LOG_ERR("Failed to create decoder: %d", ret);
         return ret;
