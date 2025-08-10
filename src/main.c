@@ -17,27 +17,22 @@ int main(void)
 {
 	int ret;
 	
-    //ret = usb_enable(NULL);
-	//if (ret < 0) {
-	//	LOG_ERR("Failed to enable USB\n");
-    //    return 1;
-	//}
 	setup_disk();
 
-    ret = setup_mass();
-    if (ret != 0) {
+  //  ret = setup_mass();
+  //  if (ret != 0) {
+  //      return ret;
+  //  }
+    ret = init_audio_playback();
+    if (ret < 0) {
         return ret;
     }
-  //  ret = init_audio_playback();
-  //  if (ret < 0) {
-  //      return ret;
-  //  }
 
-  //  LOG_INF("Starting opus playback");
-  //  ret = stream_opus("/NAND:/BRUTO~1.OPU");
-  //  if (ret < 0) {
-  //      return ret;
-  //  }
+    LOG_INF("Starting opus playback");
+    ret = stream_opus("/NAND:/BRUTO_~1.OPU");
+    if (ret < 0) {
+        return ret;
+    }
 
     return 0;
 }
