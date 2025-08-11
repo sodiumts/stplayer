@@ -1,9 +1,0 @@
-manifest:
-  remotes:
-    - name: pdgendt
-      url-base: https://github.com/pdgendt
-  projects:
-    - name: opus
-      revision: zephyr
-      path: modules/lib/opus
-      remote: pdgendt

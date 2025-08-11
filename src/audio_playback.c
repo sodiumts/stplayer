@@ -127,6 +127,8 @@ int stream_opus(const char *path) {
             goto cleanup;
         }
 
+        //LOG_INF("Decode count: %d", oprc);
+
         if (discard_cnt > 0) {
             if (discard_cnt > SAMPLE_NO) {
                 LOG_ERR("Discard count larger than one decoded buffer: %d vs %d", discard_cnt, SAMPLE_NO);
@@ -137,6 +139,8 @@ int stream_opus(const char *path) {
             oprc -= discard_cnt;
             discard_cnt = 0;
         }
+
+        //apply_volume_int16((int16_t *) block, SAMPLE_NO, 10);
 
         rc = i2s_write(i2s_dev, block, BLOCK_SIZE);
         if (rc < 0) {
