@@ -1,7 +1,10 @@
 #include "usb_mass.h"
 
+#include "zephyr/kernel.h"
 #include "zephyr/logging/log.h"
 #include "zephyr/usb/usbd.h"
+#include "zephyr/usb/usbd_msg.h"
+#include <stdbool.h>
 #include <stdint.h>
 #include <zephyr/usb/usb_device.h>
 #include <zephyr/storage/disk_access.h>
@@ -41,6 +44,41 @@ USBD_CONFIGURATION_DEFINE(hs_config, attributes, 125, &hs_cfg_desc);
 USBD_DEFINE_MSC_LUN(nand, "NAND", "Zephyr", "FlashDisk", "0.00");
 
 static struct fs_mount_t fs_mnt;
+static bool fs_mounted = false;
+
+static void mount_handler(struct k_work *work);
+static void unmount_handler(struct k_work *work);
+
+K_WORK_DEFINE(mount_work, mount_handler);
+K_WORK_DEFINE(unmount_work, unmount_handler);
+
+bool is_mounted(void) {
+    return fs_mounted;
+}
+
+static void mount_handler(struct k_work *work) {
+    if(!fs_mounted) {
+        LOG_INF("Mounting due to MSC suspend");
+        int res = fs_mount(&fs_mnt);
+        if (res != 0) {
+            LOG_ERR("Failed to mount FS: %d", res);
+            return;
+        }
+        fs_mounted = true;
+    }
+}
+
+static void unmount_handler(struct k_work *work) {
+    if(fs_mounted) {
+        LOG_INF("Unmounting due to MSC connect");
+        int res = fs_unmount(&fs_mnt);
+        if(res != 0) {
+            LOG_INF("Failed to mount fs: %d", res);
+            return;
+        }
+        fs_mounted = false;
+    }
+}
 
 static int setup_flash(struct fs_mount_t *mnt)
 {
@@ -78,6 +116,7 @@ static int mount_app_fs(struct fs_mount_t *mnt)
 	mnt->mnt_point = "/NAND:";
 
 	rc = fs_mount(mnt);
+    fs_mounted = true;
     printk("fs_mount returned %d for mount point %s\n", rc, mnt->mnt_point);
 
 	return rc;
@@ -177,6 +216,17 @@ static void fix_code_triple(struct usbd_context *uds_ctx,
 	}
 }
 
+static void msg_cb(struct usbd_context *const usbd_ctx, const struct usbd_msg *const msg) {
+    LOG_INF("USBD message: %s", usbd_msg_type_string(msg->type));
+    if (msg->type == USBD_MSG_CONFIGURATION) {
+        k_work_submit(&unmount_work);
+	}
+
+    if (msg->type == USBD_MSG_SUSPEND) {
+        k_work_submit(&mount_work);
+    } 
+}
+
 int setup_mass(void) {
     int err;
 
@@ -242,8 +292,10 @@ int setup_mass(void) {
         return err;
     }
 
+
+    err = usbd_msg_register_cb(&usbdev, msg_cb);
     if (err != 0) {
-        LOG_ERR("Failed to enable USB");
+        LOG_ERR("Failed to register CB");
         return err;
     }
 
