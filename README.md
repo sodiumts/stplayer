@@ -1,5 +1,5 @@
 # STPlayer Opus player
-Zephyr RTOS based Opus audio player. 
+Zephyr RTOS based Opus audio player on an STM32F411 (plan to migrate to a STM32U5 series controller). 
 ## Goals
 - High quality headphone DAC & amp 
 - Low power usage
