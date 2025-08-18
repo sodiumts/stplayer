@@ -18,30 +18,17 @@ K_MEM_SLAB_DEFINE_STATIC(tx_0_mem_slab, WB_UP(BLOCK_SIZE), NUM_BLOCKS, 32);
 
 static void apply_volume_int16(int16_t *samples, size_t nsamples, uint8_t vol_percent)
 {
-    if (vol_percent == 100) {
-        return;
-    }
+    if (vol_percent == 100) return;
     if (vol_percent == 0) {
         memset(samples, 0, nsamples * sizeof(int16_t));
         return;
     }
 
-    uint32_t scale = (vol_percent * 256U + 50U) / 100U;
+    int32_t scale = (vol_percent * 32767 + 50) / 100;
 
     for (size_t i = 0; i < nsamples; i++) {
         int32_t s = samples[i];
-        int32_t tmp = s * (int32_t)scale;
-
-        tmp += (tmp >= 0) ? 128 : -128;
-        tmp >>= 8;
-
-        if (tmp > INT16_MAX) {
-            tmp = INT16_MAX;
-        } else if (tmp < INT16_MIN) {
-            tmp = INT16_MIN;
-        }
-
-        samples[i] = (int16_t)tmp;
+        samples[i] = (int16_t)((s * scale) >> 15);
     }
 }
 
@@ -140,7 +127,7 @@ int stream_opus(const char *path) {
             discard_cnt = 0;
         }
 
-        //apply_volume_int16((int16_t *) block, SAMPLE_NO, 10);
+        apply_volume_int16((int16_t *) block, oprc * 2, 20);
 
         rc = i2s_write(i2s_dev, block, BLOCK_SIZE);
         if (rc < 0) {

@@ -59,20 +59,20 @@ int main(void)
 	
 	setup_disk();
 
-    ret = setup_mass();
-    if (ret != 0) {
+    //ret = setup_mass();
+    //if (ret != 0) {
+    //    return ret;
+    //}
+    ret = init_audio_playback();
+    if (ret < 0) {
         return ret;
     }
-//    ret = init_audio_playback();
-//    if (ret < 0) {
-//        return ret;
-//    }
-//
-//    LOG_INF("Starting opus playback");
-//    ret = stream_opus("/NAND:/ADO-MI~1.OGX");
-//    if (ret < 0) {
-//        return ret;
-//    }
+
+    LOG_INF("Starting opus playback");
+    ret = stream_opus("/NAND:/Ado - MIRROR.opus");
+    if (ret < 0) {
+        return ret;
+    }
 
     return 0;
 }
