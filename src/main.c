@@ -39,13 +39,13 @@ void do_write_gray_full(uint8_t gray_level) {
 int main(void)
 {
 	int ret;
-    disp = DEVICE_DT_GET(DISP_NODE);
-    if(!device_is_ready(disp)) {
-        LOG_ERR("Display is not ready");
-        return 1;
-    }
-
-    do_write_gray_full(0b1111);
+//    disp = DEVICE_DT_GET(DISP_NODE);
+//    if(!device_is_ready(disp)) {
+//        LOG_ERR("Display is not ready");
+//        return 1;
+//    }
+//
+//    do_write_gray_full(0b1111);
     //display_set_contrast(disp, 128);
     //for (int i = 15; i >= 0; i--) {
     //    do_write_gray_full(i);
@@ -57,12 +57,12 @@ int main(void)
     //k_sleep(K_SECONDS(2));
    // display_blanking_on(disp);
 	
-	//setup_disk();
+	setup_disk();
 
-    //ret = setup_mass();
-    //if (ret != 0) {
-    //    return ret;
-    //}
+    ret = setup_mass();
+    if (ret != 0) {
+        return ret;
+    }
 //    ret = init_audio_playback();
 //    if (ret < 0) {
 //        return ret;
