@@ -126,18 +126,18 @@ void setup_disk(void)
 	printk("Mount %s: %d\n", fs_mnt.mnt_point, rc);
 
 	
-    rc = fs_statvfs(mp->mnt_point, &sbuf);
-    printk("fs_statvfs rc = %d\n", rc);
-	if (rc < 0) {
-		printk("FAIL: statvfs: %d\n", rc);
-		return;
-	}
-
-	printk("%s: bsize = %lu ; frsize = %lu ;"
-	       " blocks = %lu ; bfree = %lu\n",
-	       mp->mnt_point,
-	       sbuf.f_bsize, sbuf.f_frsize,
-	       sbuf.f_blocks, sbuf.f_bfree);
+//    rc = fs_statvfs(mp->mnt_point, &sbuf);
+//    printk("fs_statvfs rc = %d\n", rc);
+//	if (rc < 0) {
+//		printk("FAIL: statvfs: %d\n", rc);
+//		return;
+//	}
+//
+//	printk("%s: bsize = %lu ; frsize = %lu ;"
+//	       " blocks = %lu ; bfree = %lu\n",
+//	       mp->mnt_point,
+//	       sbuf.f_bsize, sbuf.f_frsize,
+//	       sbuf.f_blocks, sbuf.f_bfree);
 
 	rc = fs_opendir(&dir, mp->mnt_point);
 	printk("%s opendir: %d\n", mp->mnt_point, rc);
