@@ -59,17 +59,17 @@ int main(void)
 	
 	setup_disk();
 
-    //ret = setup_mass();
-    //if (ret != 0) {
-    //    return ret;
-    //}
+//    ret = setup_mass();
+//    if (ret != 0) {
+//        return ret;
+//    }
     ret = init_audio_playback();
     if (ret < 0) {
         return ret;
     }
 
     LOG_INF("Starting opus playback");
-    ret = stream_opus("/NAND:/Ado - MIRROR.opus");
+    ret = stream_opus("/SD:/Ado - MIRROR.opus");
     if (ret < 0) {
         return ret;
     }

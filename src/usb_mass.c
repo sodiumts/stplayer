@@ -41,7 +41,7 @@ static const uint8_t attributes = USB_SCD_REMOTE_WAKEUP;
 USBD_CONFIGURATION_DEFINE(fs_config, attributes, 125, &fs_cfg_desc);
 USBD_CONFIGURATION_DEFINE(hs_config, attributes, 125, &hs_cfg_desc);
 
-USBD_DEFINE_MSC_LUN(nand, "NAND", "Zephyr", "FlashDisk", "0.00");
+USBD_DEFINE_MSC_LUN(sd, "SD", "Zephyr", "SD", "0.00");
 
 static struct fs_mount_t fs_mnt;
 static bool fs_mounted = false;
@@ -80,31 +80,6 @@ static void unmount_handler(struct k_work *work) {
     }
 }
 
-static int setup_flash(struct fs_mount_t *mnt)
-{
-    int rc;
-    unsigned int id = STORAGE_PARTITION_ID;
-    const struct flash_area *pfa = NULL;
-
-    mnt->storage_dev = (void *)STORAGE_PARTITION_ID;
-
-    rc = flash_area_open(id, &pfa);
-    printk("flash_area_open returned %d\n", rc);
-    if (rc < 0) {
-        LOG_ERR("flash_area_open failed: %d", rc);
-        return rc;
-    }
-
-    printk("Area %u at 0x%08x on %s for %u bytes\n",
-           id, (unsigned int)pfa->fa_off,
-           pfa->fa_dev ? pfa->fa_dev->name : "unknown",
-           (unsigned int)pfa->fa_size);
-
-    /* Close or keep open depending on needs. */
-    /* flash_area_close(pfa); */
-
-    return 0;
-}
 static int mount_app_fs(struct fs_mount_t *mnt)
 {
 	int rc;
@@ -113,7 +88,7 @@ static int mount_app_fs(struct fs_mount_t *mnt)
 
 	mnt->type = FS_FATFS;
 	mnt->fs_data = &fat_fs;
-	mnt->mnt_point = "/NAND:";
+	mnt->mnt_point = "/SD:";
 
 	rc = fs_mount(mnt);
     fs_mounted = true;
@@ -132,9 +107,10 @@ void setup_disk(void)
     
 	fs_dir_t_init(&dir);
 
-	rc = setup_flash(mp);
-    if (rc < 0) {
-        LOG_ERR("Failed to setup flash area");
+
+    rc = disk_access_ioctl("SD", DISK_IOCTL_CTRL_INIT, NULL);
+    if (rc != 0) {
+        LOG_ERR("Failed to init SD: %d", rc);
         return;
     }
 

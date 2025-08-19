@@ -53,43 +53,54 @@
 };
 
 
+//&spi1 {
+//	pinctrl-0 = <&spi1_sck_pa5  &spi1_miso_pa6 &spi1_mosi_pa7>;
+//	pinctrl-names = "default";
+//	cs-gpios = <&gpioa 4 GPIO_ACTIVE_LOW>;
+//
+//	status = "okay";
+//
+//	w25q64_spi: spi-nor-flash@0 {
+//		compatible = "jedec,spi-nor";
+//		reg = <0>;
+//		spi-max-frequency = <24000000>;
+//		size = <DT_SIZE_M(64)>; /* 64 Mbits */
+//		status = "okay";
+//		jedec-id = [ef 40 17];
+//
+//        partitions {
+//            compatible = "fixed-partitions";
+//            #address-cells = <1>;
+//            #size-cells = <1>;
+//
+//            storage_partition: partition@0 {
+//                label = "storage";
+//                reg = <0x00000000 0x00800000>;
+//                read-only;
+//            };
+//        };
+//	};
+//};
+
+
+
 &spi1 {
-	pinctrl-0 = <&spi1_sck_pa5  &spi1_miso_pa6 &spi1_mosi_pa7>;
-	pinctrl-names = "default";
-	cs-gpios = <&gpioa 4 GPIO_ACTIVE_LOW>;
-
-	status = "okay";
-
-	w25q64_spi: spi-nor-flash@0 {
-		compatible = "jedec,spi-nor";
-		reg = <0>;
-		spi-max-frequency = <24000000>;
-		size = <DT_SIZE_M(64)>; /* 64 Mbits */
-		status = "okay";
-		jedec-id = [ef 40 17];
-
-        partitions {
-            compatible = "fixed-partitions";
-            #address-cells = <1>;
-            #size-cells = <1>;
-
-            storage_partition: partition@0 {
-                label = "storage";
-                reg = <0x00000000 0x00800000>;
-                read-only;
-            };
-        };
-	};
-};
-
-
-
-&spi5 {
-    pinctrl-0 = <&spi5_sck_pb0 &spi5_mosi_pb8>;
+    pinctrl-0 = <&spi1_sck_pa5  &spi1_miso_pa6 &spi1_mosi_pa7>;
     pinctrl-names = "default";
     status = "okay";
-    //spi-max-frequency = <40000000>;
     cs-gpios = <&gpiob 1 GPIO_ACTIVE_LOW>;    
+
+    sdhc0: sdhc@0 {
+        compatible = "zephyr,sdhc-spi-slot";
+        reg = <0>;
+        status = "okay";
+        mmc {
+            compatible = "zephyr,sdmmc-disk";
+            disk-name = "SD";
+            status = "okay";
+        };
+        spi-max-frequency = <18000000>;
+    };
 };
 
 &usbotg_fs {
@@ -99,45 +110,45 @@
 };
 
 / {
-	msc_disk0 {
-		compatible = "zephyr,flash-disk";
-		partition = <&storage_partition>;
-		disk-name = "NAND";
-		cache-size = <65536>;
-        status = "okay";
-	};
+	//msc_disk0 {
+	//	compatible = "zephyr,flash-disk";
+	//	partition = <&storage_partition>;
+	//	disk-name = "NAND";
+	//	cache-size = <65536>;
+    //    status = "okay";
+	//};
 
-    chosen {
-        zephyr,display = &sh1122;
-    };
-
-    mipi_dbi_sh1122: mipi_dbi_sh1122 {
-        compatible = "zephyr,mipi-dbi-spi";
-        spi-dev = <&spi5>;
-
-        dc-gpios = <&gpiob 2 GPIO_ACTIVE_HIGH>;
-        reset-gpios = <&gpioa 0 GPIO_ACTIVE_LOW>;
-        
-        write-only;
-        #address-cells = <1>; 
-        #size-cells = <0>;
-
-        sh1122: sh1122@0 {
-            compatible = "sinowealth,sh1122";
-            mipi-max-frequency = <20000000>;
-            reg = <0>;
-            width = <256>;
-            height = <64>;
-            oscillator-freq = <0xA0>;
-            multiplex-ratio = <63>;
-            display-offset = <0>;
-            start-line = <0>;
-            low-voltage = <0x0>;
-            dc-dc = <0x80>;
-            precharge-voltage = <0x1A>;
-            phase-length = <0x76>;
-            vcomh-voltage = <0x3B>;
-            mipi-mode = "MIPI_DBI_MODE_SPI_4WIRE";
-        };
-    };
+//    chosen {
+//        zephyr,display = &sh1122;
+//    };
+//
+//    mipi_dbi_sh1122: mipi_dbi_sh1122 {
+//        compatible = "zephyr,mipi-dbi-spi";
+//        spi-dev = <&spi5>;
+//
+//        dc-gpios = <&gpiob 2 GPIO_ACTIVE_HIGH>;
+//        reset-gpios = <&gpioa 0 GPIO_ACTIVE_LOW>;
+//        
+//        write-only;
+//        #address-cells = <1>; 
+//        #size-cells = <0>;
+//
+//        sh1122: sh1122@0 {
+//            compatible = "sinowealth,sh1122";
+//            mipi-max-frequency = <20000000>;
+//            reg = <0>;
+//            width = <256>;
+//            height = <64>;
+//            oscillator-freq = <0xA0>;
+//            multiplex-ratio = <63>;
+//            display-offset = <0>;
+//            start-line = <0>;
+//            low-voltage = <0x0>;
+//            dc-dc = <0x80>;
+//            precharge-voltage = <0x1A>;
+//            phase-length = <0x76>;
+//            vcomh-voltage = <0x3B>;
+//            mipi-mode = "MIPI_DBI_MODE_SPI_4WIRE";
+//        };
+//    };
 };

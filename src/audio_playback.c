@@ -127,7 +127,7 @@ int stream_opus(const char *path) {
             discard_cnt = 0;
         }
 
-        apply_volume_int16((int16_t *) block, oprc * 2, 20);
+        apply_volume_int16((int16_t *) block, oprc * 2, 5);
 
         rc = i2s_write(i2s_dev, block, BLOCK_SIZE);
         if (rc < 0) {
