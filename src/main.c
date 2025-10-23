@@ -7,10 +7,10 @@
 #include <zephyr/drivers/i2s.h>
 #include <zephyr/usb/usb_device.h>
 #include <zephyr/drivers/display.h>
-#include <ff.h>
+//#include <ff.h>
 
-#include "usb_mass.h"
-#include "audio_playback.h"
+//#include "usb_mass.h"
+//#include "audio_playback.h"
 
 LOG_MODULE_REGISTER(main);
 
@@ -39,40 +39,40 @@ void do_write_gray_full(uint8_t gray_level) {
 int main(void)
 {
 	int ret;
-//    disp = DEVICE_DT_GET(DISP_NODE);
-//    if(!device_is_ready(disp)) {
-//        LOG_ERR("Display is not ready");
-//        return 1;
-//    }
-//
-//    do_write_gray_full(0b1111);
+    disp = DEVICE_DT_GET(DISP_NODE);
+    if(!device_is_ready(disp)) {
+        LOG_ERR("Display is not ready");
+        return 1;
+    }
+
+    //do_write_gray_full(0b1111);
     //display_set_contrast(disp, 128);
-    //for (int i = 15; i >= 0; i--) {
-    //    do_write_gray_full(i);
-    //    k_sleep(K_SECONDS(1));
-    //}
+    for (int i = 15; i >= 0; i--) {
+        do_write_gray_full(i);
+        k_sleep(K_SECONDS(1));
+    }
 
     //display_blanking_off(disp);
     //
     //k_sleep(K_SECONDS(2));
    // display_blanking_on(disp);
 	
-	setup_disk();
+	//setup_disk();
 
 //    ret = setup_mass();
 //    if (ret != 0) {
 //        return ret;
 //    }
-    ret = init_audio_playback();
-    if (ret < 0) {
-        return ret;
-    }
+    //ret = init_audio_playback();
+    //if (ret < 0) {
+    //    return ret;
+    //}
 
-    LOG_INF("Starting opus playback");
-    ret = stream_opus("/SD:/Ado - MIRROR.opus");
-    if (ret < 0) {
-        return ret;
-    }
+    //LOG_INF("Starting opus playback");
+    //ret = stream_opus("/SD:/Ado - MIRROR.opus");
+    //if (ret < 0) {
+    //    return ret;
+    //}
 
     return 0;
 }

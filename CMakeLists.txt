@@ -8,9 +8,9 @@ project(stplayer)
 
 target_sources(app PRIVATE 
     src/main.c 
-    src/usb_mass.c 
-    src/opus_file.c 
-    src/audio_playback.c
+    #    src/usb_mass.c 
+    #    src/opus_file.c 
+    #    src/audio_playback.c
 )
 target_include_directories(app PRIVATE include)
 
