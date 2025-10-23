@@ -1,5 +1,7 @@
 #include "usb_mass.h"
 
+#include "core/lv_obj.h"
+#include "misc/lv_color.h"
 #include "zephyr/kernel.h"
 #include "zephyr/logging/log.h"
 #include <stdbool.h>
@@ -140,4 +142,52 @@ void setup_disk(void)
 	(void)fs_closedir(&dir);
 
     return;
+}
+
+int populate_list_with_files(lv_obj_t *list) {
+    struct fs_dir_t dir;
+    struct fs_mount_t *mp = &fs_mnt;
+    int rc;
+
+    fs_dir_t_init(&dir);
+
+    rc = fs_opendir(&dir, mp->mnt_point);
+    if (rc < 0) {
+        LOG_ERR("Failed to open directory: %d", rc);
+        return rc;
+    }
+
+    // Clear existing list items if needed
+    // lv_obj_clean(list); // Uncomment if you want to clear first
+
+    int file_count = 0;
+    
+    while (1) {
+        struct fs_dirent ent = {0};
+        
+        rc = fs_readdir(&dir, &ent);
+        if (rc < 0) {
+            LOG_ERR("Failed to read directory entry");
+            break;
+        }
+        
+        if (ent.name[0] == 0) {
+            break;
+        }
+
+        if (ent.type == FS_DIR_ENTRY_FILE) {
+
+            lv_obj_t *list_item = lv_list_add_text(list, ent.name);
+            lv_obj_set_style_bg_color(list_item, lv_color_black(), LV_PART_MAIN); 
+            lv_obj_set_style_text_color(list_item, lv_color_white(), 0);
+            
+            file_count++;
+            
+            printk("Added file to list: %s\n", ent.name);
+        }
+    }
+
+    fs_closedir(&dir);
+    LOG_INF("Added %d files to list", file_count);
+    return file_count;
 }

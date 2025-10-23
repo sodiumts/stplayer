@@ -11,6 +11,7 @@
 #include <lvgl.h>
 #include <lvgl_zephyr.h>
 
+#include "core/lv_obj_pos.h"
 #include "core/lv_obj_style_gen.h"
 #include "display/lv_display.h"
 #include "lv_api_map_v8.h"
@@ -42,9 +43,16 @@ int main(void)
     lv_obj_set_style_bg_color(lv_screen_active(), lv_color_black(), LV_PART_MAIN);
     lv_obj_set_style_text_color(lv_screen_active(), lv_color_white(), LV_PART_MAIN);
 
-    lv_obj_t *label = lv_label_create(lv_screen_active());
-    lv_label_set_text(label, "hello there");
-    lv_obj_align(label, LV_ALIGN_CENTER, 0, 0);
+    //lv_obj_t *label = lv_label_create(lv_screen_active());
+    //lv_label_set_text(label, "hello there");
+    //lv_obj_align(label, LV_ALIGN_CENTER, 0, 0);
+
+
+    lv_obj_t *list = lv_list_create(lv_screen_active());
+    lv_obj_set_style_bg_color(list, lv_color_black(), 0);
+    lv_obj_set_size(list, 256,64);
+
+    populate_list_with_files(list);
     
     lv_refr_now(NULL);
     k_msleep(50);
