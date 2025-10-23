@@ -11,4 +11,3 @@ bool is_mounted(void);
 
 void setup_disk(void);
 
-int setup_mass(void);
