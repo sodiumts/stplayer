@@ -3,6 +3,7 @@
 
 #include <zephyr/logging/log.h>
 #include <opus.h>
+#include <zephyr/drivers/dma.h>
 #include <zephyr/drivers/i2s.h>
 
 LOG_MODULE_REGISTER(audio_playback, LOG_LEVEL_DBG);
@@ -16,21 +17,77 @@ OpusDecoder *decoder;
 
 K_MEM_SLAB_DEFINE_STATIC(tx_0_mem_slab, WB_UP(BLOCK_SIZE), NUM_BLOCKS, 32);
 
-static void apply_volume_int16(int16_t *samples, size_t nsamples, uint8_t vol_percent)
+static void apply_volume_int16(int16_t *samples, size_t nsamples, uint16_t adc_value)
 {
-    if (vol_percent == 100) return;
-    if (vol_percent == 0) {
+    const uint16_t ADC_MAX = 4000;
+    const float MAX_AMPLITUDE = 0.6f; // Never exceed 60% to prevent clipping
+    
+    if (adc_value == 0) {
         memset(samples, 0, nsamples * sizeof(int16_t));
         return;
     }
 
-    int32_t scale = (vol_percent * 32767 + 50) / 100;
+    if (adc_value > ADC_MAX) adc_value = ADC_MAX;
+
+    // Exponential curve for better low-end control
+    float normalized = (float)adc_value / ADC_MAX;
+    float scale = normalized * normalized; // x^2 curve (softer than x^3)
+    
+    // Apply hard limit
+    if (scale > MAX_AMPLITUDE) {
+        scale = MAX_AMPLITUDE;
+    }
 
     for (size_t i = 0; i < nsamples; i++) {
-        int32_t s = samples[i];
-        samples[i] = (int16_t)((s * scale) >> 15);
+        samples[i] = (int16_t)(samples[i] * scale);
     }
 }
+
+
+uint16_t read_potentiometer(const struct adc_dt_spec *adc_chan)
+{
+    int ret;
+    uint16_t buf;
+    struct adc_sequence sequence = {
+        .buffer = &buf,
+        .buffer_size = sizeof(buf),
+        .oversampling = 4
+    };
+
+    if (!device_is_ready(adc_chan->dev)) {
+        printk("ADC device not ready\n");
+        return -1;
+    }
+
+    ret = adc_sequence_init_dt(adc_chan, &sequence);
+    if (ret != 0) {
+        printk("Failed to initialize ADC sequence: %d\n", ret);
+        return ret;
+    }
+
+    ret = adc_read(adc_chan->dev, &sequence);
+    if (ret != 0) {
+        printk("Failed to read ADC: %d\n", ret);
+        return ret;
+    }
+
+    // Scale to 0-100 (12-bit ADC: max = 4095)
+    //int percentage = (buf * 100) / ((1 << adc_chan.resolution) - 1);
+
+    //printk("PA2 - ADC raw: %d, Percentage: %d%%\n", buf, percentage);
+
+    return buf;
+}
+
+//#define NUM_SAMPLES 16  // Number of samples for averaging
+//
+//uint16_t read_potentiometer_avg(const struct adc_dt_spec *adc_chan) {
+//    uint32_t sum = 0;
+//    for (int i = 0; i < NUM_SAMPLES; i++) {
+//        sum += read_potentiometer(adc_chan); // Your existing function
+//    }
+//    return (uint16_t)(sum / NUM_SAMPLES);
+//}
 
 static int start_i2s_dma() {
     LOG_INF("Pre-filling DMA buffers");
@@ -71,7 +128,7 @@ static int stop_i2s_dma() {
     return 0;
 }
 
-int stream_opus(const char *path) {
+int stream_opus(const char *path, const struct adc_dt_spec *adc_chan) {
     int rc;
     fs_file_t_init(&filep);
 
@@ -127,7 +184,7 @@ int stream_opus(const char *path) {
             discard_cnt = 0;
         }
 
-        apply_volume_int16((int16_t *) block, oprc * 2, 5);
+        apply_volume_int16((int16_t *) block, oprc * 2, read_potentiometer(adc_chan));
 
         rc = i2s_write(i2s_dev, block, BLOCK_SIZE);
         if (rc < 0) {

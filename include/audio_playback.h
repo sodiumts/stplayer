@@ -3,6 +3,8 @@
 #include "opus_file.h"
 
 #include <zephyr/kernel.h>
+#include <zephyr/drivers/dma.h>
+#include <zephyr/drivers/adc.h>
 #include <opus.h>
 
 #define SAMPLE_RATE 48000
@@ -13,5 +15,5 @@
 
 #define I2S_DEV DT_NODELABEL(i2s3)
 
-int stream_opus(const char *path);
+int stream_opus(const char *path, const struct adc_dt_spec *adc_chan);
 int init_audio_playback();

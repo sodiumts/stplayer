@@ -35,10 +35,30 @@
         drive-push-pull;
         slew-rate = "high-speed";
     };
+    adc1_in2: adc1-in2 {
+        pinmux = <STM32_PINMUX('A', 2, ANALOG)>;
+    };
 };
 
 &dma1 {
     status = "okay";
+};
+
+&adc1 {
+    status = "okay";
+    #address-cells = <1>;
+    #size-cells = <0>;
+    pinctrl-0 = <&adc1_in2>;
+
+
+    channel@2 {
+        reg = <2>; 
+        zephyr,gain = "ADC_GAIN_1";
+        zephyr,reference = "ADC_REF_INTERNAL";
+        zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>;
+        zephyr,resolution = <12>; 
+        zephyr,input-positive = <2>;
+    };
 };
 
 
@@ -87,6 +107,9 @@
 / {
     chosen {
         zephyr,display = &sh1122;
+    };
+    zephyr,user {
+        io-channels = <&adc1 2>;
     };
 
     mipi_dbi_sh1122: mipi_dbi_sh1122 {

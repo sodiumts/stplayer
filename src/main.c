@@ -5,8 +5,9 @@
 #include <zephyr/devicetree.h>
 #include <zephyr/logging/log.h>
 #include <zephyr/drivers/i2s.h>
-#include <zephyr/usb/usb_device.h>
 #include <zephyr/drivers/display.h>
+#include <zephyr/drivers/adc.h>
+
 #include <ff.h>
 #include <lvgl.h>
 #include <lvgl_zephyr.h>
@@ -15,6 +16,7 @@
 #include "core/lv_obj_style_gen.h"
 #include "display/lv_display.h"
 #include "lv_api_map_v8.h"
+#include "misc/lv_area.h"
 #include "misc/lv_color.h"
 #include "usb_mass.h"
 #include "audio_playback.h"
@@ -23,6 +25,10 @@ LOG_MODULE_REGISTER(main);
 
 #define DISP_NODE DT_NODELABEL(sh1122)
 static const struct device *disp;
+
+static const struct adc_dt_spec adc_chan =ADC_DT_SPEC_GET(DT_PATH(zephyr_user));
+
+
 
 int main(void)
 {
@@ -33,6 +39,8 @@ int main(void)
         LOG_ERR("Display is not ready");
         return 1;
     }
+
+    display_blanking_off(disp);
     
     ret = init_audio_playback();
     if (ret < 0) {
@@ -56,15 +64,26 @@ int main(void)
     
     lv_refr_now(NULL);
     k_msleep(50);
-    //LOG_INF("Starting opus playback");
-    //ret = stream_opus("/SD:/Ado - MIRROR.opus");
-    //if (ret < 0) {
-    //    return ret;
-    //}
-    //
+    ret = adc_channel_setup_dt(&adc_chan);
+    if (ret < 0) {
+        return ret;
+    }
+    
+    LOG_INF("Starting opus playback");
+    ret = stream_opus("/SD:/Ado - MIRROR.opus", &adc_chan);
+    if (ret < 0) {
+        return ret;
+    }
+    
+    
+    
+    lv_obj_t *label = lv_label_create(lv_screen_active());
+    lv_obj_align(label, LV_ALIGN_CENTER, 0, 0);
+
     while (1) {
         lv_timer_handler();  // or lv_task_handler() depending on LVGL version
-        k_msleep(16);
+
+        //lv_label_set_text_fmt(label, "%d", read_potentiometer());
     }
 
     return 0;
