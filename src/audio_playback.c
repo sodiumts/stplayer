@@ -1,6 +1,9 @@
 #include "audio_playback.h"
 #include "opus_defines.h"
+#include "syscalls/kernel.h"
+#include "zephyr/kernel.h"
 
+#include <string.h>
 #include <zephyr/logging/log.h>
 #include <opus.h>
 #include <zephyr/drivers/dma.h>
@@ -20,7 +23,7 @@ K_MEM_SLAB_DEFINE_STATIC(tx_0_mem_slab, WB_UP(BLOCK_SIZE), NUM_BLOCKS, 32);
 static void apply_volume_int16(int16_t *samples, size_t nsamples, uint16_t adc_value)
 {
     const uint16_t ADC_MAX = 4000;
-    const float MAX_AMPLITUDE = 0.6f; // Never exceed 60% to prevent clipping
+    const float MAX_AMPLITUDE = 0.6f; // clamp it to stop loudness
     
     if (adc_value == 0) {
         memset(samples, 0, nsamples * sizeof(int16_t));
@@ -29,11 +32,9 @@ static void apply_volume_int16(int16_t *samples, size_t nsamples, uint16_t adc_v
 
     if (adc_value > ADC_MAX) adc_value = ADC_MAX;
 
-    // Exponential curve for better low-end control
     float normalized = (float)adc_value / ADC_MAX;
-    float scale = normalized * normalized; // x^2 curve (softer than x^3)
-    
-    // Apply hard limit
+    float scale = normalized * normalized;    
+
     if (scale > MAX_AMPLITUDE) {
         scale = MAX_AMPLITUDE;
     }
@@ -42,52 +43,6 @@ static void apply_volume_int16(int16_t *samples, size_t nsamples, uint16_t adc_v
         samples[i] = (int16_t)(samples[i] * scale);
     }
 }
-
-
-uint16_t read_potentiometer(const struct adc_dt_spec *adc_chan)
-{
-    int ret;
-    uint16_t buf;
-    struct adc_sequence sequence = {
-        .buffer = &buf,
-        .buffer_size = sizeof(buf),
-        .oversampling = 4
-    };
-
-    if (!device_is_ready(adc_chan->dev)) {
-        printk("ADC device not ready\n");
-        return -1;
-    }
-
-    ret = adc_sequence_init_dt(adc_chan, &sequence);
-    if (ret != 0) {
-        printk("Failed to initialize ADC sequence: %d\n", ret);
-        return ret;
-    }
-
-    ret = adc_read(adc_chan->dev, &sequence);
-    if (ret != 0) {
-        printk("Failed to read ADC: %d\n", ret);
-        return ret;
-    }
-
-    // Scale to 0-100 (12-bit ADC: max = 4095)
-    //int percentage = (buf * 100) / ((1 << adc_chan.resolution) - 1);
-
-    //printk("PA2 - ADC raw: %d, Percentage: %d%%\n", buf, percentage);
-
-    return buf;
-}
-
-//#define NUM_SAMPLES 16  // Number of samples for averaging
-//
-//uint16_t read_potentiometer_avg(const struct adc_dt_spec *adc_chan) {
-//    uint32_t sum = 0;
-//    for (int i = 0; i < NUM_SAMPLES; i++) {
-//        sum += read_potentiometer(adc_chan); // Your existing function
-//    }
-//    return (uint16_t)(sum / NUM_SAMPLES);
-//}
 
 static int start_i2s_dma() {
     LOG_INF("Pre-filling DMA buffers");
@@ -128,85 +83,141 @@ static int stop_i2s_dma() {
     return 0;
 }
 
-int stream_opus(const char *path, const struct adc_dt_spec *adc_chan) {
-    int rc;
-    fs_file_t_init(&filep);
-
-    if ((rc = fs_open(&filep, path, FS_O_READ)) < 0) {
-        LOG_ERR("fs_open failed: %d", rc); 
-        return rc;
-    }
-
-    rc = start_i2s_dma();
-    if (rc < 0) {
-        goto cleanup;
-    }
-
-    opus_state_init(&op_state);
-
-    uint16_t discard_cnt = opus_verify_header(&filep, &op_state); 
-    if (discard_cnt < 0) {
-        goto cleanup;
-    }
-    
-    discard_cnt *= 2;
-    
+void play_opus_packet(bool *isPlaying, int discard_cnt, uint16_t volume) {
+    void * block = NULL;
     uint16_t packet_size;
-    while(1) {
-        void * block = NULL;
-        int rcf = opus_get_packet(&op_state, opus_packet, &packet_size, &filep);
-        // Failed
-        if (rcf != OP_OK && rcf != OP_DONE)
-            goto cleanup;
-
-        rc = k_mem_slab_alloc(&tx_0_mem_slab, &block, K_FOREVER);
-        if (rc < 0) {
-            LOG_ERR("Block allocation failed: %d", rc);
-            break;
-        }
-        // Returns count of decoded samples
-        int oprc = opus_decode(decoder, opus_packet, packet_size, block, SAMPLE_NO, 0);
-        if (oprc < 0) {
-            LOG_ERR("Opus decode failed: %d", oprc);
-            goto cleanup;
-        }
-
-        //LOG_INF("Decode count: %d", oprc);
-
-        if (discard_cnt > 0) {
-            if (discard_cnt > SAMPLE_NO) {
-                LOG_ERR("Discard count larger than one decoded buffer: %d vs %d", discard_cnt, SAMPLE_NO);
-                goto cleanup;
-            }
-
-            memmove((int16_t *) block, (int16_t *) block + discard_cnt, (oprc - discard_cnt)* sizeof(int16_t));
-            oprc -= discard_cnt;
-            discard_cnt = 0;
-        }
-
-        apply_volume_int16((int16_t *) block, oprc * 2, read_potentiometer(adc_chan));
-
-        rc = i2s_write(i2s_dev, block, BLOCK_SIZE);
-        if (rc < 0) {
-            LOG_ERR("i2s_write failed: %d", rc);
-            k_mem_slab_free(&tx_0_mem_slab, &block);
-            break;
-        }
-
-
-
-        // Done with file
-        if (rcf == OP_DONE) {
-            LOG_INF("Done with file");
-            goto cleanup;
-        }
+    int rcf = opus_get_packet(&op_state, opus_packet, &packet_size, &filep);
+    if (rcf != OP_OK && rcf != OP_DONE) {
+        fs_close(&filep);
+        opus_decoder_ctl(decoder, OPUS_RESET_STATE);
+        stop_i2s_dma();
+        *isPlaying = false;
+        return;
     }
-  cleanup:
-    fs_close(&filep);
-    opus_decoder_ctl(decoder, OPUS_RESET_STATE);
-    stop_i2s_dma();
-    return rc;
+
+    int rc = k_mem_slab_alloc(&tx_0_mem_slab, &block, K_FOREVER);
+    if (rc < 0) {
+        LOG_ERR("Block allocation failed: %d", rc);
+        *isPlaying = false;
+        return;
+    }
+    // Returns count of decoded samples
+    int oprc = opus_decode(decoder, opus_packet, packet_size, block, SAMPLE_NO, 0);
+    if (oprc < 0) {
+        LOG_ERR("Opus decode failed: %d", oprc);
+        fs_close(&filep);
+        opus_decoder_ctl(decoder, OPUS_RESET_STATE);
+        stop_i2s_dma();
+        *isPlaying = false;
+        return;
+    }
+
+    if (discard_cnt > 0) {
+        if (discard_cnt > SAMPLE_NO) {
+            LOG_ERR("Discard count larger than one decoded buffer: %d vs %d", discard_cnt, SAMPLE_NO);
+            fs_close(&filep);
+            opus_decoder_ctl(decoder, OPUS_RESET_STATE);
+            stop_i2s_dma();
+            *isPlaying = false;
+            return;
+        }
+
+        memmove((int16_t *) block, (int16_t *) block + discard_cnt, (oprc - discard_cnt)* sizeof(int16_t));
+        oprc -= discard_cnt;
+        discard_cnt = 0;
+    }
+
+    apply_volume_int16((int16_t *) block, oprc * 2, volume);
+
+    rc = i2s_write(i2s_dev, block, BLOCK_SIZE);
+    if (rc < 0) {
+        LOG_ERR("i2s_write failed: %d", rc);
+        k_mem_slab_free(&tx_0_mem_slab, &block);
+        *isPlaying = false;
+        return;
+    }
+
+    // Done with file
+    if (rcf == OP_DONE) {
+        LOG_INF("Done with file");
+        fs_close(&filep);
+        opus_decoder_ctl(decoder, OPUS_RESET_STATE);
+        stop_i2s_dma();
+        *isPlaying = false;
+        return;
+    }
 }
+
+void audio_handler_thread(void *pipeP, void *arg2, void *arg3) {
+    LOG_INF("Started audio");
+    struct k_pipe* pipe = (struct k_pipe*) pipeP;
+    int ret = init_audio_playback();
+    if (ret < 0) {
+        LOG_INF("Failed audio Init");
+        return;
+    }
+
+    bool isPlaying = false;
+    
+    uint16_t discard_cnt = 0;
+    uint16_t volume = 0;
+    while(1) {
+        audio_thread_msg receivedMessage;
+        receivedMessage.msg_type = DEF;
+        int ret = k_pipe_read(pipe, (uint8_t *) &receivedMessage, sizeof(audio_thread_msg), K_NSEC(1));
+        if (ret < 0 && ret != -EAGAIN) {
+            LOG_ERR("Read pipe error %d", ret);
+        }
+
+        switch(receivedMessage.msg_type) {
+            case PLAY:
+                // Set up a new opus file to be played
+                int rc;
+                isPlaying = true;
+                fs_file_t_init(&filep);
+
+                if ((rc = fs_open(&filep, receivedMessage.song_path, FS_O_READ)) < 0) {
+                    LOG_ERR("fs_open failed: %d", rc); 
+                    continue;
+                }
+
+                rc = start_i2s_dma();
+                if (rc < 0) {
+                    fs_close(&filep);
+                    opus_decoder_ctl(decoder, OPUS_RESET_STATE);
+                    stop_i2s_dma();
+                    continue;
+                }
+
+                opus_state_init(&op_state);
+
+                discard_cnt = opus_verify_header(&filep, &op_state); 
+                if (discard_cnt < 0) {
+                    fs_close(&filep);
+                    stop_i2s_dma();
+                }
+
+                discard_cnt *= 2; 
+            break;
+            case VOL:
+                volume = receivedMessage.volume; 
+            break;
+            case DEF:
+            break;
+            default:
+                LOG_INF("Got message type %d", receivedMessage.msg_type);
+            break;
+        }
+
+        if (isPlaying) {
+            play_opus_packet(&isPlaying, discard_cnt, volume);
+            // Discard count should be 0 after first packet
+            if (discard_cnt > 0) discard_cnt = 0;
+        }
+
+    }
+}
+
 
 static int configure_i2s() {
     int ret;

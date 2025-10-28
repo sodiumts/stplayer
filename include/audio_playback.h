@@ -17,3 +17,13 @@
 
 int stream_opus(const char *path, const struct adc_dt_spec *adc_chan);
 int init_audio_playback();
+
+void audio_handler_thread(void *pipeP, void *arg2, void *arg3);
+
+enum message_type {PLAY, PAUSE, RESUME, VOL, DEF};
+
+typedef struct {
+    enum message_type msg_type;
+    int volume;
+    char song_path[64];
+} audio_thread_msg;
