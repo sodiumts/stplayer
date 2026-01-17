@@ -10,9 +10,9 @@
 	 * Note: because the PLLI2S is dependent on the main PLL, the latter
 	 *       should not be changed without checking impact on PLLI2S
 	 */
-    div-m = <8>;
-	mul-n = <271>;
-	div-r = <2>;
+    div-m = <25>;
+	mul-n = <196>;
+	div-r = <4>;
 	status = "okay";
 };
 
@@ -34,6 +34,12 @@
         bias-disable;
         drive-push-pull;
         slew-rate = "high-speed";
+    };
+    i2s3_mclk: i2s3-mclk {
+        pinmux = <STM32_PINMUX('B', 10, AF6)>;
+        bias-disable;
+        drive-push-pull;
+        slew-rate = "very-high-speed"; // Recommended for clock signals
     };
     adc1_in2: adc1-in2 {
         pinmux = <STM32_PINMUX('A', 2, ANALOG)>;
@@ -65,14 +71,25 @@
 
 &i2s3 {
     status = "okay";
-    pinctrl-0 = <&i2s3_lrc &i2s3_bclk &i2s3_din>;
+    pinctrl-0 = <&i2s3_lrc &i2s3_bclk &i2s3_din &i2s3_mclk>;
     pinctrl-names = "default";
     clocks = <&rcc STM32_CLOCK(APB1, 15U)>,
 		 <&rcc STM32_SRC_PLLI2S_R I2S_SEL(0)>;
     mck-enabled;
 };
 
+&i2c1 {
+    status = "okay";
+    pinctrl-0 = <&i2c1_scl_pb6 &i2c1_sda_pb7>;
 
+    codec0: tlv320dac@18 {
+        compatible = "ti,tlv320dac";
+        reg = <0x18>;                /* I2C 7-bit address (example) */
+        label = "TLV320DAC";         /* optional human label */
+        reset-gpios = <&gpioc 13 GPIO_ACTIVE_LOW>; /* required by binding */
+        status = "okay";
+    };
+};
 
 
 
