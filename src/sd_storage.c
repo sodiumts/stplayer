@@ -1,4 +1,4 @@
-#include "usb_mass.h"
+#include "sd_storage.h"
 
 #include "core/lv_obj.h"
 #include "misc/lv_color.h"
@@ -16,7 +16,7 @@
 
 
 
-LOG_MODULE_REGISTER(usb_mass, LOG_LEVEL_DBG);
+LOG_MODULE_REGISTER(sd_storage, LOG_LEVEL_DBG);
 
 static struct fs_mount_t fs_mnt;
 static bool fs_mounted = false;
@@ -76,7 +76,6 @@ void setup_disk(void)
 {
 	struct fs_mount_t *mp = &fs_mnt;
 	struct fs_dir_t dir;
-	struct fs_statvfs sbuf;
 	int rc;
 
     
@@ -96,23 +95,7 @@ void setup_disk(void)
 		return;
 	}
 
-	/* Allow log messages to flush to avoid interleaved output */
-
 	printk("Mount %s: %d\n", fs_mnt.mnt_point, rc);
-
-	
-//    rc = fs_statvfs(mp->mnt_point, &sbuf);
-//    printk("fs_statvfs rc = %d\n", rc);
-//	if (rc < 0) {
-//		printk("FAIL: statvfs: %d\n", rc);
-//		return;
-//	}
-//
-//	printk("%s: bsize = %lu ; frsize = %lu ;"
-//	       " blocks = %lu ; bfree = %lu\n",
-//	       mp->mnt_point,
-//	       sbuf.f_bsize, sbuf.f_frsize,
-//	       sbuf.f_blocks, sbuf.f_bfree);
 
 	rc = fs_opendir(&dir, mp->mnt_point);
 	printk("%s opendir: %d\n", mp->mnt_point, rc);
@@ -140,8 +123,6 @@ void setup_disk(void)
 	}
 
 	(void)fs_closedir(&dir);
-
-    return;
 }
 
 int populate_list_with_files(lv_obj_t *list) {
@@ -156,9 +137,6 @@ int populate_list_with_files(lv_obj_t *list) {
         LOG_ERR("Failed to open directory: %d", rc);
         return rc;
     }
-
-    // Clear existing list items if needed
-    // lv_obj_clean(list); // Uncomment if you want to clear first
 
     int file_count = 0;
     

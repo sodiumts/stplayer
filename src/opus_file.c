@@ -22,7 +22,6 @@ uint16_t opus_verify_header(struct fs_file_t* fp, opus_state_t *state) {
     
     
     uint8_t segment_num = ogg_header[26];
-    //printf("Number of segments: %d\n", segment_num);
  
     fs_seek(fp, segment_num, FS_SEEK_CUR);
 
@@ -64,7 +63,6 @@ uint16_t opus_verify_header(struct fs_file_t* fp, opus_state_t *state) {
     }
 
     segment_num = ogg_header[26];
-    //printf("Second page segment count: %d\n", segment_num);
 
     char segment_table[segment_num];
     rd = fs_read(fp, segment_table, segment_num);
@@ -75,11 +73,9 @@ uint16_t opus_verify_header(struct fs_file_t* fp, opus_state_t *state) {
     
     uint16_t opus_tags_size = 0;
     for (uint8_t i = 0; i < segment_num; i++) {
-        //printf("Segment (%d) length: %"PRIu8"\n", i, (uint8_t) segment_table[i]);
         opus_tags_size += (uint8_t) segment_table[i];
     }
 
-    //printf("OpusTags size: %"PRIu16"\n", opus_tags_size);
     
     char opus_tags[opus_tags_size];
     rd = fs_read(fp, opus_tags, (uint16_t) opus_tags_size);
@@ -112,7 +108,6 @@ uint16_t opus_verify_header(struct fs_file_t* fp, opus_state_t *state) {
         new_ptr += comment_len;
     }
 
-    //page_count += 2;
     return discard_samples;
 }
 
@@ -124,14 +119,9 @@ static int _opus_open_page(opus_state_t *st, struct fs_file_t *fp) {
     size_t rd;
     rd = fs_read(fp, ogg_header, OGG_HEADER_SIZE);
     if(rd != OGG_HEADER_SIZE) {
-       // if(feof(fp)) {
-       //     LOG_DBG("Reached end of file");
-       //     return OP_EOF;
-       // }
         LOG_ERR("Failed to read OGG header");
         return OP_MISS;
     }
-    //page_count += 1;
 
     if (memcmp("OggS", ogg_header, 4) != 0) {
         LOG_ERR("Next segment is not OggS stream");
@@ -145,7 +135,6 @@ static int _opus_open_page(opus_state_t *st, struct fs_file_t *fp) {
         LOG_DBG("Reached last stream page");
     }
 
-    //printf("New page segment count %"PRIu8"\n", segment_count);
     st->remaining_segments = segment_count;
     st->page_segment_count = segment_count;
     st->segment_pos = 0;
@@ -201,7 +190,6 @@ int opus_get_packet(opus_state_t *st, uint8_t *buff, uint16_t *pack_size, struct
         return OP_TOOLARGE;
     }
 
-    //printf("Opus packet len: %"PRIu16"\n", opus_len);
     *pack_size = opus_len;
     
     rd = fs_read(fp, buff, opus_len);

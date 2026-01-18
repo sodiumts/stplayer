@@ -13,7 +13,7 @@
 
 LOG_MODULE_REGISTER(audio_playback, LOG_LEVEL_DBG);
 
-static const struct device *i2s_dev = DEVICE_DT_GET(I2S_DEV);
+static const struct device *i2s_dev = DEVICE_DT_GET(DT_NODELABEL(sai1_b));
 
 static uint8_t opus_packet[1275];
 static opus_state_t op_state;

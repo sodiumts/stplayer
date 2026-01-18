@@ -1,53 +1,38 @@
-&flash0 {
+// LSE and flash disabled since I don't need either. (lse is just burnt on my board :/)
+&flash {
     status = "disabled";
 };
 
-&plli2s {
-	/* Minimize audio clock error (with i2s mck-enabled) for all of:
-	 * - 22.05kHz / 16b, 24b or 32b
-	 * - 44.1kHz  / 16b, 24b or 32b
-	 * - 88.2kHz  / 16b or 24b
-	 * Note: because the PLLI2S is dependent on the main PLL, the latter
-	 *       should not be changed without checking impact on PLLI2S
-	 */
-    div-m = <25>;
-	mul-n = <196>;
-	div-r = <4>;
-	status = "okay";
+&clk_lse {
+	status = "disabled";
 };
 
 &pinctrl {
-    i2s3_din: i2s3-din {
-        pinmux = <STM32_PINMUX('B', 5, AF6)>;            /* your DIN pinmux cell */
-        bias-disable;
-        drive-push-pull;
-        slew-rate = "high-speed";
-    };
-    i2s3_bclk: i2s3-bclk {
-        pinmux = <STM32_PINMUX('B', 12, AF7)>;            /* your BCLK pinmux cell */
-        bias-disable;
-        drive-push-pull;
-        slew-rate = "high-speed";
-    };
-    i2s3_lrc: i2s3-lrc {
-        pinmux = <STM32_PINMUX('A', 15, AF6)>;            /* your LRC pinmux cell */
-        bias-disable;
-        drive-push-pull;
-        slew-rate = "high-speed";
-    };
-    i2s3_mclk: i2s3-mclk {
-        pinmux = <STM32_PINMUX('B', 10, AF6)>;
-        bias-disable;
-        drive-push-pull;
-        slew-rate = "very-high-speed"; // Recommended for clock signals
-    };
-    adc1_in2: adc1-in2 {
-        pinmux = <STM32_PINMUX('A', 2, ANALOG)>;
-    };
-};
-
-&dma1 {
-    status = "okay";
+   adc1_in2: adc1-in2 {
+       pinmux = <STM32_PINMUX('A', 2, ANALOG)>;
+   };
+   
+   // SAI for i2s DAC
+   pinctrl_sai1_bclk: sai1_b_bclk {
+        pinmux = <STM32_PINMUX('B', 3, AF13)>/* bclk */; 
+   };
+   pinctrl_sai1_ws: sai1_b_ws {
+        pinmux = <STM32_PINMUX('B', 6, AF13)> /* ws */ ; 
+   };
+   pinctrl_sai1_di: sai1_b_di {
+        pinmux = <STM32_PINMUX('B', 5, AF13)>; // din
+   };
+  
+   // SPI For display and SD card
+   pinctrl_spi1_sck: spi1_pins_sck {
+        pinmux = <STM32_PINMUX('A', 1, AF5)> /* sck */; 
+   };
+   pinctrl_spi1_miso: spi1_pins_miso {
+        pinmux = <STM32_PINMUX('A', 6, AF5)> /* miso */; 
+   };
+   pinctrl_spi1_mosi: spi1_pins_mosi {
+        pinmux = <STM32_PINMUX('A', 7, AF5)>; /* mosi */
+   };
 };
 
 &adc1 {
@@ -67,59 +52,58 @@
     };
 };
 
-
-
-&i2s3 {
+/* 
+Setup for the audio device. This mcu uses a sai peripheral
+*/
+&gpdma1 {
+    compatible = "st,stm32u5-dma";
     status = "okay";
-    pinctrl-0 = <&i2s3_lrc &i2s3_bclk &i2s3_din &i2s3_mclk>;
-    pinctrl-names = "default";
-    clocks = <&rcc STM32_CLOCK(APB1, 15U)>,
-		 <&rcc STM32_SRC_PLLI2S_R I2S_SEL(0)>;
-    mck-enabled;
 };
 
-&i2c1 {
+&sai1_b {
+    compatible = "st,stm32-sai";
     status = "okay";
-    pinctrl-0 = <&i2c1_scl_pb6 &i2c1_sda_pb7>;
+    pinctrl-0 = <&pinctrl_sai1_bclk &pinctrl_sai1_ws &pinctrl_sai1_di>;
+    pinctrl-names = "default";
+    dma-names = "tx";
+};
+
+&i2c2 {
+    status = "okay";
 
     codec0: tlv320dac@18 {
         compatible = "ti,tlv320dac";
-        reg = <0x18>;                /* I2C 7-bit address (example) */
-        label = "TLV320DAC";         /* optional human label */
-        reset-gpios = <&gpioc 13 GPIO_ACTIVE_LOW>; /* required by binding */
+        reg = <0x18>; 
+        label = "TLV320DAC";
+        reset-gpios = <&gpioc 13 GPIO_ACTIVE_LOW>;
         status = "okay";
     };
 };
 
 
-
+/*
+SD card setup, uses the same spi as the display
+*/
 &spi1 {
-    pinctrl-0 = <&spi1_sck_pa5  &spi1_miso_pa6 &spi1_mosi_pa7>;
+    pinctrl-0 = <&pinctrl_spi1_sck &pinctrl_spi1_miso &pinctrl_spi1_mosi>;
     pinctrl-names = "default";
     status = "okay";
-    //cs-gpios = <&gpiob 1 GPIO_ACTIVE_LOW>;    
 
     cs-gpios = <&gpiob 1 GPIO_ACTIVE_LOW>, <&gpioa 3 GPIO_ACTIVE_LOW>;
     sdhc0: sdhc@1 {
         compatible = "zephyr,sdhc-spi-slot";
-        reg = <1>;
-        //cs-gpios = <&gpioa 3 GPIO_ACTIVE_LOW>;
         status = "okay";
+        reg = <1>;
 
         mmc {
             compatible = "zephyr,sdmmc-disk";
-            disk-name = "SD";
             status = "okay";
+            disk-name = "SD";
         };
         spi-max-frequency = <15000000>;
     };
 };
 
-&usbotg_fs {
-    status = "okay";
-    pinctrl-0 = <&usb_otg_fs_dm_pa11 &usb_otg_fs_dp_pa12>;
-    pinctrl-names = "default";
-};
 
 / {
     chosen {
@@ -142,7 +126,6 @@
 
         sh1122: sh1122@0 {
             compatible = "sinowealth,sh1122";
-            //cs-gpios = <&gpiob 1 GPIO_ACTIVE_LOW>;
             mipi-max-frequency = <20000000>;
             reg = <0>;
             width = <256>;
@@ -157,6 +140,19 @@
             phase-length = <0x76>;
             vcomh-voltage = <0x3B>;
             mipi-mode = "MIPI_DBI_MODE_SPI_4WIRE";
+        };
+    };
+    // pll2 setup for sai audio device 
+    clocks {
+        pll2: pll2 {
+            compatible = "st,stm32u5-pll-clock";
+            status = "okay";
+            clocks = <&clk_hse>;
+            div-m = <5>;
+            mul-n = <59>;
+            div-p = <6>;
+            div-q = <2>;
+            div-r = <2>;
         };
     };
 };

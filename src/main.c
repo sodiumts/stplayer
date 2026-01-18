@@ -18,7 +18,7 @@
 #include <misc/lv_area.h>
 #include <misc/lv_color.h>
 
-#include "usb_mass.h"
+#include "sd_storage.h"
 #include "audio_playback.h"
 
 LOG_MODULE_REGISTER(main);

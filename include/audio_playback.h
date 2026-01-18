@@ -1,7 +1,5 @@
 #pragma once
 
-#include "opus_file.h"
-
 #include <zephyr/kernel.h>
 #include <zephyr/drivers/dma.h>
 #include <zephyr/drivers/adc.h>
