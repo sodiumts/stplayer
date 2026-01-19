@@ -10,6 +10,9 @@
 #include <zephyr/drivers/dma.h>
 #include <zephyr/drivers/i2s.h>
 #include <zephyr/audio/codec.h>
+#include <zephyr/fs/fs.h>
+
+#include "opus_file.h"
 
 LOG_MODULE_REGISTER(audio_playback, LOG_LEVEL_DBG);
 
